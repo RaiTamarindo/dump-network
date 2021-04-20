@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/ghedo/go.pkt/capture/pcap"
+	"github.com/ghedo/go.pkt/filter"
 	"github.com/ghedo/go.pkt/layers"
 	"github.com/spf13/cobra"
 )
@@ -31,18 +34,18 @@ func watch(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("error on parsing port flag: %s", err)
 	}
-	onlyTCP, err := strconv.ParseBool(cmd.Flag("tcp").Value.String())
+	tcpOnly, err := strconv.ParseBool(cmd.Flag("tcp").Value.String())
 	if err != nil {
 		log.Fatalf("error on parsing tcp flag: %s", err)
 	}
-	onlyUDP, err := strconv.ParseBool(cmd.Flag("udp").Value.String())
+	udpOnly, err := strconv.ParseBool(cmd.Flag("udp").Value.String())
 	if err != nil {
 		log.Fatalf("error on parsing udp flag: %s", err)
 	}
 	log.Printf("interface: %s", iface)
 	log.Printf("port: %d", port)
-	log.Printf("only tcp: %v", onlyTCP)
-	log.Printf("only udp: %v", onlyUDP)
+	log.Printf("only tcp: %v", tcpOnly)
+	log.Printf("only udp: %v", udpOnly)
 
 	src, err := pcap.Open(iface)
 	if err != nil {
@@ -53,6 +56,29 @@ func watch(cmd *cobra.Command, args []string) {
 	err = src.Activate()
 	if err != nil {
 		log.Fatalf("error activating source: %s", err)
+	}
+
+	terms := []string{}
+	if tcpOnly {
+		terms = append(terms, "tcp")
+	} else if udpOnly {
+		terms = append(terms, "udp")
+	}
+	if port > 0 {
+		terms = append(terms, fmt.Sprintf("port %d", port))
+	}
+
+	if len(terms) > 0 {
+		flt, err := filter.Compile(strings.Join(terms, " "), src.LinkType(), false)
+		if err != nil {
+			log.Fatalf("error parsing filter: %s", err)
+		}
+		defer flt.Cleanup()
+
+		err = src.ApplyFilter(flt)
+		if err != nil {
+			log.Fatalf("error applying filter: %s", err)
+		}
 	}
 
 	for {
